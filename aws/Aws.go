@@ -1,4 +1,4 @@
-package main
+package aws
 
 import (
 	"context"
@@ -10,16 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/luizfpsoares/dscli/aws/model"
 )
 
-type SecurityGroup struct {
-	Id      string
-	Name    string
-	VpcName string
-	Descr   string
-}
-
-func main() {
+func GetSecurityGroup(search string) []model.SecurityGroup {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 
 	if err != nil {
@@ -33,16 +27,11 @@ func main() {
 		log.Fatalf("Erro ao listar Security Groups: %v", err)
 	}
 
-	var securityGRoupsList []SecurityGroup
+	var securityGRoupsList []model.SecurityGroup
 
-	var search string
-	fmt.Print("Digite o prefixo do Security Group: ")
-	fmt.Scanln(&search)
-
-	var sgName string
 	for _, sg := range resp.SecurityGroups {
 
-		sgName = aws.ToString(sg.GroupName)
+		sgName := aws.ToString(sg.GroupName)
 
 		if strings.Contains(sgName, search) {
 			resp, err := ec2Client.DescribeVpcs(context.TODO(), &ec2.DescribeVpcsInput{
@@ -53,7 +42,7 @@ func main() {
 			}
 			if len(resp.Vpcs) == 0 {
 				fmt.Println("VPC não encontrada")
-				return
+				return nil
 			}
 
 			vpc := resp.Vpcs[0]
@@ -65,7 +54,7 @@ func main() {
 					break
 				}
 			}
-			securityGRoupsList = append(securityGRoupsList, SecurityGroup{
+			securityGRoupsList = append(securityGRoupsList, model.SecurityGroup{
 				Id:      aws.ToString(sg.GroupId),
 				Name:    aws.ToString(sg.GroupName),
 				VpcName: aws.ToString(&vpcName),
@@ -74,17 +63,19 @@ func main() {
 
 		}
 	}
-	for i, securityGroup := range securityGRoupsList {
-		fmt.Printf("%d | VPC: %s | ID: %s | Name: %s | Descr: %s\n", i, securityGroup.VpcName, securityGroup.Id, securityGroup.Name, securityGroup.Descr)
+
+	return securityGRoupsList
+}
+
+func AddIngressRule(userName string, ip string, securityGroupId string) string {
+
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+
+	if err != nil {
+		log.Fatalf("Erro ao carregar configuração: %v", err)
 	}
 
-	var userIP, userName, securityGroupId string
-	fmt.Print("Digite o IP de origem: ")
-	fmt.Scanln(&userIP)
-	fmt.Print("Digite o nome do usuário: ")
-	fmt.Scanln(&userName)
-	fmt.Print("Digite o ID do Security Group: ")
-	fmt.Scanln(&securityGroupId)
+	ec2Client := ec2.NewFromConfig(cfg)
 
 	_, err = ec2Client.AuthorizeSecurityGroupIngress(context.TODO(), &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId: &securityGroupId,
@@ -95,7 +86,7 @@ func main() {
 				ToPort:     aws.Int32(22),
 				IpRanges: []types.IpRange{
 					{
-						CidrIp:      aws.String(userIP),
+						CidrIp:      aws.String(ip),
 						Description: aws.String(userName),
 					},
 				},
@@ -107,5 +98,5 @@ func main() {
 		log.Fatal("Erro ao criar regra de entrada: %v", err)
 	}
 
-	fmt.Println("Regra criada com sucesso!")
+	return "Regra criada com sucesso!"
 }
